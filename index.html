@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EmbryoDraw</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <header class="top">
+    <h1>EmbryoDraw</h1>
+    <a class="nav-link" href="/spiegazione.html">Come funziona il modello →</a>
+    <p>Pesci generati dallo <em>sviluppo</em>: la forma emerge da un genoma che guida una rete regolatoria, morfogeni e crescita, non da curve disegnate.</p>
+  </header>
+  <main class="layout">
+    <section class="stage">
+      <div class="viewer">
+        <canvas id="view"></canvas>
+        <div id="banner" class="banner" hidden></div>
+        <figure id="wt" class="wt" hidden><canvas id="wt-canvas" width="220" height="110"></canvas><figcaption>wild-type</figcaption></figure>
+        <div id="busy" class="busy" hidden>sviluppo in corso…</div>
+      </div>
+      <div class="timeline">
+        <button id="play" class="icon" title="Riproduci lo sviluppo">▶</button>
+        <input id="scrub" type="range" min="0" max="0" value="0" aria-label="Stadio di sviluppo" />
+        <span id="stage-label" class="stage-label"></span>
+      </div>
+      <div class="controls">
+        <label>Espressione genica <select id="overlay"><option value="">nessuna</option></select></label>
+        <span class="spacer"></span>
+        <button id="export-svg">Esporta SVG</button>
+        <button id="export-json">Esporta genoma</button>
+        <label class="button">Importa genoma<input id="import-json" type="file" accept="application/json" hidden /></label>
+      </div>
+      <div id="stats" class="chips"></div>
+    </section>
+    <aside class="panel">
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="genome" aria-selected="true">Genoma</button>
+        <button role="tab" data-tab="exp">Esperimenti</button>
+        <button role="tab" data-tab="evo">Evoluzione</button>
+      </nav>
+      <div id="tab-genome" class="tab">
+        <svg id="grn" viewBox="-160 -160 320 320" aria-label="Rete regolatoria"></svg>
+        <p class="hint">Clicca un gene per vederne l'espressione. <b>KO</b> lo elimina, <b>OE</b> lo sovraesprime ovunque.</p>
+        <div class="row"><button id="reset-pert">Ripristina</button><span id="genome-name" class="muted"></span></div>
+        <ul id="genes" class="genes"></ul>
+      </div>
+      <div id="tab-exp" class="tab" hidden>
+        <p class="hint">Esperimenti classici di biologia dello sviluppo, rifatti sul genoma di riferimento. Ognuno indica il fenotipo noto in natura: confrontalo con quello che emerge.</p>
+        <ul id="experiments" class="experiments"></ul>
+      </div>
+      <div id="tab-evo" class="tab" hidden>
+        <p class="hint">Ogni discendente porta 1–4 mutazioni del <em>programma di sviluppo</em>: siti di legame, soglie, emivite, duplicazioni e perdite di geni. Scegli un genitore: diventa il nuovo punto di partenza.</p>
+        <div class="row">
+          <button id="breed" class="primary">Genera 9 discendenti</button>
+          <label>tasso <input id="mut-rate" type="range" min="0.3" max="4" step="0.1" value="1.2" /></label>
+        </div>
+        <div class="row">
+          <select id="fitness">
+            <option value="slender">selezione: corpo slanciato</option>
+            <option value="deep">selezione: corpo alto</option>
+            <option value="somites">selezione: più vertebre</option>
+            <option value="dorsal">selezione: pinna dorsale grande</option>
+            <option value="eye">selezione: occhi grandi</option>
+          </select>
+          <button id="auto">Auto ×10 generazioni</button>
+        </div>
+        <div id="brood" class="brood"></div>
+        <h3>Lignaggio</h3>
+        <ol id="lineage" class="lineage"></ol>
+      </div>
+    </aside>
+  </main>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

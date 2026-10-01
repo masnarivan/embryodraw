@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EmbryoDraw · Il modello</title>
+  <link rel="stylesheet" href="/src/style.css" />
+  <link rel="stylesheet" href="/src/docs.css" />
+</head>
+<body>
+  <header class="top">
+    <h1>EmbryoDraw</h1>
+    <a class="nav-link" href="/">← Torna all'app</a>
+  </header>
+
+  <div class="doc-layout">
+    <nav class="toc" aria-label="Indice">
+      <ol>
+        <li><a href="#idea">L'idea</a></li>
+        <li><a href="#equazione">L'equazione di un gene</a></li>
+        <li><a href="#embrione">L'embrione</a></li>
+        <li><a href="#stadi">Gli stadi dello sviluppo</a></li>
+        <li><a href="#anatomia">Dall'espressione all'anatomia</a></li>
+        <li><a href="#vitalita">Vitalità</a></li>
+        <li><a href="#crescita">Crescita e disegno</a></li>
+        <li><a href="#pelle">Pelle: pattern di Turing</a></li>
+        <li><a href="#evoluzione">Mutazioni ed evoluzione</a></li>
+        <li><a href="#formato">Formato del genoma</a></li>
+        <li><a href="#validatore">Valida un genoma</a></li>
+        <li><a href="#wildtype">Il genoma wild-type</a></li>
+        <li><a href="#verifica">Esperimenti di verifica</a></li>
+        <li><a href="#limiti">Limiti</a></li>
+        <li><a href="#bibliografia">Bibliografia</a></li>
+      </ol>
+    </nav>
+
+    <article class="doc">
+      <section id="idea">
+        <h2>L'idea</h2>
+        <p><a href="https://github.com/LingDong-/fishdraw">fishdraw</a> genera pesci estraendo a caso parametri <em>grafici</em>: curve del corpo, forme delle pinne, tratteggi. EmbryoDraw parte invece da un <strong>genoma</strong>. I geni formano una <strong>rete regolatoria</strong> (GRN) che legge gradienti di <strong>morfogeni</strong> su un embrione in crescita. La forma adulta è il risultato di dove e quanto ogni gene si è espresso.</p>
+        <p>Una mutazione quindi non sposta una curva: cambia un sito di legame, una soglia, un'emivita. L'effetto sulla forma passa sempre dallo sviluppo, e per questo le varianti sono <em>vincolate</em>. Alcune sono plausibili, alcune omeotiche, alcune letali.</p>
+        <div class="pipeline" aria-label="Flusso del modello">
+          <span>genoma</span><i>→</i><span>GRN + morfogeni<br><small>embrione 2D che si allunga</small></span><i>→</i><span>anatomia<br><small>somiti, pinne, testa</small></span><i>→</i><span>crescita<br><small>allometria</small></span><i>→</i><span>pelle<br><small>Turing</small></span><i>→</i><span>disegno</span>
+        </div>
+      </section>
+
+      <section id="equazione">
+        <h2>L'equazione di un gene</h2>
+        <p>Ogni gene <var>i</var> ha in ogni cella una concentrazione <var>g<sub>i</sub></var> del suo prodotto, che evolve secondo il formalismo dei <em>gap-gene</em> di Reinitz e Jaeger:</p>
+        <div class="eq">
+          dg<sub>i</sub>/dt = gate<sub>i</sub> · [ rate<sub>i</sub> · σ( Σ<sub>j</sub> w<sub>ij</sub> g<sub>j</sub> + bias<sub>i</sub> + src<sub>i</sub>·profilo<sub>i</sub>(x,y) ) − decay<sub>i</sub> · g<sub>i</sub> ] + D<sub>i</sub> ∇²g<sub>i</sub>
+        </div>
+        <dl class="terms">
+          <dt>σ(u) = 1/(1+e<sup>−u</sup>)</dt><dd>La risposta del promotore: una sigmoide. Sotto la soglia il gene è spento, sopra è acceso.</dd>
+          <dt>w<sub>ij</sub> (<code>reg</code>)</dt><dd>Il modulo cis-regolatorio, cioè l'enhancer: un peso positivo attiva, uno negativo reprime. Un peso del gene su sé stesso è un'auto-regolazione; se è positivo dà <em>memoria</em> (bistabilità).</dd>
+          <dt>bias<sub>i</sub></dt><dd>La soglia basale del promotore. Più è negativa, più input servono per accendere il gene.</dd>
+          <dt>src · profilo</dt><dd>Input materno o posizionale (<code>source</code>): un segnale fisso dai bordi dell'embrione o dalla gemma caudale. Entra <em>dentro</em> la sigmoide, quindi può essere contrastato da repressori.</dd>
+          <dt>rate, decay</dt><dd>Velocità di sintesi e degradazione. Lo stato stazionario massimo è rate/decay.</dd>
+          <dt>D</dt><dd>Diffusione: solo i ligandi secreti diffondono, i fattori di trascrizione hanno D = 0.</dd>
+          <dt>gate</dt><dd>Opzionale. La dinamica del gene procede solo dove il gene <code>gate.by</code> supera <code>gate.threshold</code>, con fattore σ(25·(g<sub>by</sub> − soglia)). Altrove il valore resta <em>congelato</em>.</dd>
+          <dt>delay</dt><dd>Opzionale. L'auto-regolazione legge il proprio valore di <code>delay</code> unità di tempo prima. La retroazione negativa ritardata produce oscillazioni.</dd>
+        </dl>
+        <p class="note">L'integrazione è a Eulero esplicito con passo <code>DT = 0.25</code> e bordi a flusso nullo. Per i geni dell'embrione la stabilità richiede <code>D ≤ 1</code>. Per la pelle la griglia si adatta automaticamente.</p>
+      </section>
+
+      <section id="embrione">
+        <h2>L'embrione</h2>
+        <p>L'embrione è una griglia in <strong>coordinate materiali</strong> vista di lato: ogni cella segue lo stesso gruppo di cellule mentre l'embrione cresce.</p>
+        <ul>
+          <li><strong>x</strong>, asse antero-posteriore: fino a <span data-const="NX"></span> colonne. Le prime <span data-const="L0"></span> esistono dall'inizio (il blocco anteriore, futura testa). Le altre vengono aggiunte dalla gemma caudale mentre l'asse si allunga.</li>
+          <li><strong>y</strong>, asse dorso-ventrale: <span data-const="NY"></span> righe. La riga 0 è il bordo ventrale, l'ultima quello dorsale.</li>
+          <li><strong>Tempo:</strong> lo sviluppo embrionale dura <span data-const="T_END"></span> unità. La timeline salva un fotogramma ogni 10 unità, poi aggiunge 16 passi di crescita post-embrionale.</li>
+        </ul>
+        <h3>Profili delle sorgenti</h3>
+        <table>
+          <thead><tr><th><code>source.kind</code></th><th>profilo</th><th>significato</th></tr></thead>
+          <tbody>
+            <tr><td><code>ventral</code></td><td>e<sup>−y/width</sup></td><td>deposito materno ventrale</td></tr>
+            <tr><td><code>dorsal</code></td><td>e<sup>−(NY−1−y)/width</sup></td><td>deposito materno dorsale (organizzatore)</td></tr>
+            <tr><td><code>edges</code></td><td>massimo tra ventral e dorsal</td><td>entrambi i margini (es. pinna caudale)</td></tr>
+            <tr><td><code>anterior</code></td><td>e<sup>−x/width</sup></td><td>polo anteriore</td></tr>
+            <tr><td><code>tip</code></td><td>e<sup>−(L−x)/width</sup> per x ≤ L</td><td>la gemma caudale: <em>si sposta</em> con l'apice dell'asse L(t)</td></tr>
+          </tbody>
+        </table>
+        <h3>Allungamento</h3>
+        <p>A ogni passo la velocità di allungamento è <code>v = <span data-const="V_MAX"></span> · clamp(Σ forza · media<sub>y</sub>(g) nella colonna apicale, 0, 1.5)</code>, sommata sui geni con effetto <code>elongation</code>. Quando l'apice supera una nuova colonna, questa nasce come <strong>copia della colonna apicale</strong>, compresa la memoria dei geni con ritardo. Le cellule nuove ereditano così lo stato della gemma: è il meccanismo che trasforma il tempo in posizione.</p>
+      </section>
+
+      <section id="stadi">
+        <h2>Gli stadi dello sviluppo</h2>
+        <p>Non esiste codice specifico per ciascuno stadio: gli stadi sono comportamenti che emergono dalla stessa equazione con i parametri del genoma wild-type.</p>
+        <div class="stage-card">
+          <h3>1 · Assi dorso-ventrali</h3>
+          <p><code>bmp4</code> è prodotto ventralmente, si auto-attiva e diffonde. Senza ostacoli invaderebbe tutto l'embrione. <code>chd</code> (Chordin), prodotto dorsalmente, lo reprime e ferma il fronte. Le cellule a BMP alto accendono <code>gata2</code> (placca laterale, <em>ventralFate</em>), quelle a BMP basso accendono <code>sox3</code> (neuroectoderma, <em>dorsalFate</em>). In mezzo resta il mesoderma parassiale, da cui nascono i somiti.</p>
+        </div>
+        <div class="stage-card">
+          <h3>2 · Gemma caudale e timer</h3>
+          <p><code>wnt3a</code> e <code>tbxta</code> (no tail) si sostengono a vicenda nella gemma e determinano la velocità di allungamento. <code>cdx4</code> viene prodotto nella gemma senza degradarsi: le cellule lasciate indietro ne conservano il valore, che diventa un <strong>orologio di nascita</strong>. Quando <code>cdx4</code> supera la soglia di repressione di <code>tbxta</code>, la gemma si spegne e l'asse smette di crescere.</p>
+        </div>
+        <div class="stage-card">
+          <h3>3 · Somitogenesi (orologio e fronte d'onda)</h3>
+          <p><code>fgf8</code> è trascritto nella gemma e decade lentamente: le cellule che si allontanano ne hanno sempre meno, e il gradiente segue l'apice. <code>her1</code> si auto-reprime con un ritardo, quindi oscilla, ma solo dove <code>fgf8</code> supera la soglia del <code>gate</code>. Quando il fronte passa, la fase dell'orologio si congela e lascia una striscia ogni ciclo. Il numero di somiti è circa la durata dell'allungamento divisa per il periodo dell'orologio.</p>
+        </div>
+        <div class="stage-card">
+          <h3>4 · Codice Hox (colinearità temporale)</h3>
+          <p>Ogni Hox (<code>hoxb4</code>, <code>hoxc6</code>, <code>hoxc10</code>, <code>hoxd13</code>) è attivato dal timer <code>cdx4</code> con una soglia diversa, e si auto-mantiene con un peso positivo su sé stesso (memoria bistabile). Si accendono quindi in sequenza nella gemma, e le cellule nate dopo ciascuna accensione li portano tutti: ne risultano domini annidati che danno l'identità regionale.</p>
+        </div>
+        <div class="stage-card">
+          <h3>5 · Pinne</h3>
+          <p>Le pinne pari nascono nella placca laterale (<code>gata2</code>) all'interno di una finestra Hox: <code>tbx5a</code> (pettorali) tra il confine di <code>hoxb4</code> e quello di <code>hoxc6</code>, <code>tbx4</code> (pelviche) tra <code>hoxc6</code> e <code>hoxc10</code>. Le pinne mediane nascono dalla piega lungo i margini, che persiste solo dove è attivo un gene di mantenimento: <code>msxd</code> per la dorsale, <code>msxv</code> per l'anale. <code>evx1</code> forma la caudale, ed è più espresso ai margini: per questo la coda è forcuta.</p>
+        </div>
+        <div class="stage-card">
+          <h3>6 · Testa</h3>
+          <p><code>otx2</code> parte dal polo anteriore, si auto-mantiene ed è escluso dove c'è <code>hoxb4</code>. All'interno del suo dominio, <code>rx3</code> forma il campo oculare (lontano dalla placca laterale) e <code>dlx2a</code> forma le mascelle (insieme a <code>gata2</code>).</p>
+        </div>
+        <div class="stage-card">
+          <h3>7 · Crescita e pelle</h3>
+          <p><code>igf2</code> (effetto <em>growthDV</em>) e <code>gh1</code> (<em>growthAP</em>) fissano la crescita locale. <code>igf2</code> è represso da <code>cdx4</code> e <code>hoxd13</code>: per questo il corpo si assottiglia verso la coda e forma il peduncolo caudale. Sulla pelle del corpo cresciuto, <code>mitfa</code> e <code>ltk</code> formano una coppia di Turing.</p>
+        </div>
+      </section>
+
+      <section id="anatomia">
+        <h2>Dall'espressione all'anatomia</h2>
+        <p>Gli stadi non cercano i geni per <em>nome</em>, ma per <strong>effetto</strong> (<code>effect.kind</code>). Per ogni tipo di effetto si somma il campo di tutti i geni che lo portano, ognuno pesato per la sua forza. Un paralogo duplicato quindi conserva il ruolo dell'originale, o lo condivide con lui.</p>
+        <table id="effects-table">
+          <thead><tr><th><code>effect.kind</code></th><th>come viene letto</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section id="vitalita">
+        <h2>Vitalità</h2>
+        <p>Un embrione è dichiarato non vitale alla prima condizione che fallisce, in quest'ordine:</p>
+        <ol>
+          <li>valori non finiti nella simulazione (<em>instabilità numerica</em>);</li>
+          <li>nel mezzo del tronco meno del 20% delle righe è mesoderma parassiale (<em>ventralizzato o dorsalizzato</em>);</li>
+          <li>meno di 30 colonne di tronco dietro la testa (<em>gemma caudale esaurita</em>);</li>
+          <li>meno di 5 confini di somite (<em>segmentazione fallita</em>);</li>
+          <li>meno di 15 vertebre: il minimo noto nei teleostei è intorno a 16 (Molidae, Tetraodontiformes);</li>
+          <li>quantità di espressione delle mascelle &lt; 3 (<em>la larva non può alimentarsi</em>).</li>
+        </ol>
+        <p>Gli embrioni non vitali si possono comunque esplorare nella timeline. Non hanno la fase di crescita né la pelle.</p>
+      </section>
+
+      <section id="crescita">
+        <h2>Crescita e disegno</h2>
+        <p>Dopo lo sviluppo embrionale, ogni colonna e ogni cella ricevono un fattore di crescita logaritmico:</p>
+        <div class="eq">
+          γ<sub>AP</sub>(x) = ln(0.4 + 1.6 · media<sub>y</sub> growthAP) &nbsp;&nbsp;·&nbsp;&nbsp; γ<sub>DV</sub>(x,y) = ln(0.3 + 2.7 · growthDV)
+        </div>
+        <p>A uno stadio di crescita <var>s</var> ∈ [0,1] la larghezza di una colonna vale e<sup>s·γ<sub>AP</sub></sup> e l'altezza di una cella e<sup>s·γ<sub>DV</sub></sup> (smussata lungo l'asse). Il contorno si ottiene sommando, partendo dalla linea mediana, le altezze verso l'alto e verso il basso. Per <var>s</var> = 0 hai l'embrione, per <var>s</var> = 1 l'adulto.</p>
+        <p>Sopra la sagoma vengono disegnati, senza parametri grafici liberi:</p>
+        <ul>
+          <li>le pinne mediane, la cui altezza punto per punto viene dall'espressione sul margine;</li>
+          <li>la caudale, con un raggio per riga e lunghezza data dall'espressione all'apice;</li>
+          <li>le pinne pari, posizionate nel baricentro della gemma e grandi in proporzione alla radice della quantità espressa;</li>
+          <li>l'occhio e la bocca, ricavati da <code>eye</code> e <code>jaw</code>;</li>
+          <li>i miomeri a "&gt;" sui confini dei somiti (embrione e larva);</li>
+          <li>le scaglie, allineate ai segmenti (giovanile e adulto).</li>
+        </ul>
+        <p class="note">Rimangono due scelte geometriche: l'arrotondamento del muso nelle prime colonne e l'apertura a ventaglio dei raggi.</p>
+      </section>
+
+      <section id="pelle">
+        <h2>Pelle: pattern di Turing</h2>
+        <p>I geni con <code>"stage": "skin"</code> non agiscono nell'embrione: lavorano sul corpo già cresciuto per <span data-const="SKIN_TIME"></span> unità di tempo, a partire da un piccolo rumore deterministico. Possono leggere i campi embrionali (per esempio <code>sox3</code>) come input fissi.</p>
+        <p>Nel wild-type <code>mitfa</code> si auto-attiva a corto raggio e attiva <code>ltk</code>, che lo inibisce, è più veloce e diffonde circa 60 volte di più. Lo stato stazionario cade sul tratto ripido di entrambe le sigmoidi, la condizione per l'instabilità di Turing. La diffusione è divisa per il quadrato della dimensione media delle celle adulte, così una crescita anisotropa <em>stira</em> il pattern come stirerebbe la pelle vera.</p>
+      </section>
+
+      <section id="evoluzione">
+        <h2>Mutazioni ed evoluzione</h2>
+        <p>Ogni discendente riceve 1 + Poisson(<em>tasso</em>) mutazioni (tasso predefinito 1.2), scelte con queste probabilità relative:</p>
+        <table>
+          <thead><tr><th>operatore</th><th>peso</th><th>effetto</th></tr></thead>
+          <tbody>
+            <tr><td>peso dell'enhancer</td><td>38</td><td>w += N(0, max(1, 0.15·|w|))</td></tr>
+            <tr><td>soglia del promotore</td><td>20</td><td>bias += N(0, 1)</td></tr>
+            <tr><td>cinetica</td><td>12</td><td>D, emivita, deposito materno, ritardo o soglia del gate × e<sup>N(0, ~0.2)</sup></td></tr>
+            <tr><td>nuovo sito di legame</td><td>7</td><td>nuovo regolatore con peso N(0, 3)</td></tr>
+            <tr><td>forza dell'effettore</td><td>9</td><td>× e<sup>N(0, 0.25)</sup></td></tr>
+            <tr><td>perdita di un sito</td><td>5</td><td>rimuove un regolatore</td></tr>
+            <tr><td>duplicazione genica</td><td>6</td><td>copia esatta con suffisso b, c, …; ogni bersaglio dell'originale riceve anche il paralogo (dosaggio doppio finché le copie non divergono)</td></tr>
+            <tr><td>perdita genica</td><td>3</td><td>rimuove il gene e i riferimenti a esso</td></tr>
+          </tbody>
+        </table>
+        <p>La selezione automatica (×10 generazioni) sceglie a ogni generazione il discendente vitale con il punteggio più alto:</p>
+        <ul>
+          <li><em>slanciato</em>: lunghezza / profondità media;</li>
+          <li><em>alto</em>: l'inverso;</li>
+          <li><em>vertebre</em>: numero di somiti;</li>
+          <li><em>pinna dorsale</em>: profilo integrato;</li>
+          <li><em>occhi</em>: quantità di <code>eye</code>.</li>
+        </ul>
+        <p class="note">I punteggi vengono "aggirati" come in natura. Selezionando per corpo alto, per esempio, l'asse si accorcia. Il limite delle 15 vertebre impedisce le soluzioni anatomicamente impossibili.</p>
+      </section>
+
+      <section id="formato">
+        <h2>Formato del genoma</h2>
+        <p>Il genoma si importa e si esporta come <strong>JSON</strong> (pulsanti <em>Esporta genoma</em> e <em>Importa genoma</em>). La struttura è:</p>
+<pre><code>{
+  "name": "string",            // facoltativo
+  "genes": [ Gene, Gene, … ]   // obbligatorio, non vuoto; l'ordine non conta
+}</code></pre>
+        <h3>Campi di un gene</h3>
+        <table class="schema">
+          <thead><tr><th>campo</th><th>tipo</th><th></th><th>descrizione</th></tr></thead>
+          <tbody>
+            <tr><td><code>id</code></td><td>string</td><td>obbl.</td><td>Univoco; lettere, cifre, <code>_ . -</code>. Gli altri geni lo usano in <code>reg</code> e <code>gate.by</code>.</td></tr>
+            <tr><td><code>stage</code></td><td><code>"embryo"</code> | <code>"skin"</code></td><td>obbl.</td><td>Quando agisce: durante lo sviluppo o sulla pelle dell'adulto.</td></tr>
+            <tr><td><code>rate</code></td><td>number ≥ 0</td><td>obbl.</td><td>Velocità massima di sintesi.</td></tr>
+            <tr><td><code>decay</code></td><td>number ≥ 0</td><td>obbl.</td><td>Velocità di degradazione. Se è 0 il prodotto si accumula (timer).</td></tr>
+            <tr><td><code>D</code></td><td>number ≥ 0</td><td>obbl.</td><td>Diffusione. Per i geni <code>embryo</code> conviene restare ≤ 1.</td></tr>
+            <tr><td><code>bias</code></td><td>number</td><td>obbl.</td><td>Soglia del promotore (tipicamente tra −15 e +5).</td></tr>
+            <tr><td><code>reg</code></td><td>{ id: number }</td><td>obbl.</td><td>Pesi dei regolatori. Può essere <code>{}</code>. Gli id inesistenti vengono ignorati (con un avviso).</td></tr>
+            <tr><td><code>source</code></td><td>{ kind, strength, width }</td><td>fac.</td><td>Input materno o posizionale. <code>kind</code> ∈ <code>ventral · dorsal · edges · anterior · tip</code>; <code>width</code> &gt; 0 in celle.</td></tr>
+            <tr><td><code>gate</code></td><td>{ by, threshold }</td><td>fac.</td><td>Il gene evolve solo dove <code>by</code> &gt; <code>threshold</code>.</td></tr>
+            <tr><td><code>delay</code></td><td>number &gt; 0</td><td>fac.</td><td>Ritardo (in unità di tempo) applicato a <code>reg[id]</code>, cioè all'auto-regolazione.</td></tr>
+            <tr><td><code>effect</code></td><td>{ kind, strength }</td><td>fac.</td><td>Ruolo morfogenetico, vedi la <a href="#anatomia">tabella degli effetti</a>.</td></tr>
+            <tr><td><code>note</code></td><td>string</td><td>fac.</td><td>Descrizione mostrata nell'inspector.</td></tr>
+          </tbody>
+        </table>
+        <h3>Esempio: un orologio minimo</h3>
+<pre><code>{
+  "name": "esempio",
+  "genes": [
+    { "id": "fgf8", "stage": "embryo", "rate": 0.3, "decay": 0.04, "D": 0.1, "bias": -4,
+      "reg": { "tbxta": 8 } },
+    { "id": "her1", "note": "orologio", "stage": "embryo",
+      "rate": 2, "decay": 1, "D": 0, "bias": 6,
+      "reg": { "her1": -12 },
+      "delay": 5,
+      "gate": { "by": "fgf8", "threshold": 2 },
+      "effect": { "kind": "clock", "strength": 1 } }
+  ]
+}</code></pre>
+        <p>Questo frammento da solo non è vitale: manca <code>tbxta</code>, quindi l'asse non si allunga. Il modo più semplice per creare un genoma è esportare il wild-type e modificarlo:</p>
+        <p><button id="download-wt" class="primary">Scarica il genoma wild-type (JSON)</button></p>
+        <h3>Regole e consigli</h3>
+        <ul>
+          <li>Servono almeno un gene <code>elongation</code> e uno <code>clock</code>, altrimenti l'embrione non è vitale.</li>
+          <li><strong>Knockout</strong> (pulsante KO): il gene viene rimosso dalla rete. <strong>Sovraespressione</strong> (OE): <code>bias += 12</code>.</li>
+          <li>Un gene con <code>decay: 0</code> e una sorgente <code>tip</code> funziona da timer ereditario.</li>
+          <li>Per la memoria (bistabilità) serve un'auto-attivazione positiva di circa 6–10 e un bias abbastanza negativo da tenere spento il gene in assenza di segnale.</li>
+          <li>Per un pattern di Turing ci vogliono un attivatore lento e poco diffusivo e un inibitore più veloce e diffusivo. Lo stato stazionario deve cadere sul tratto ripido delle sigmoidi.</li>
+          <li>I risultati sono deterministici: lo stesso genoma produce sempre lo stesso pesce, perché anche il rumore della pelle è derivato dal genoma.</li>
+        </ul>
+      </section>
+
+      <section id="validatore">
+        <h2>Valida un genoma</h2>
+        <p>Incolla un JSON per controllarlo con le stesse regole usate dall'importazione. Gli errori bloccano l'importazione, gli avvisi no.</p>
+        <textarea id="validator-input" spellcheck="false" rows="10" aria-label="JSON del genoma" placeholder='{ "name": "…", "genes": [ … ] }'></textarea>
+        <div class="row"><button id="validate">Valida</button><button id="load-wt">Carica il wild-type</button></div>
+        <div id="validator-out" class="validator-out" aria-live="polite"></div>
+      </section>
+
+      <section id="wildtype">
+        <h2>Il genoma wild-type</h2>
+        <p>Il genoma di riferimento, generato dal codice e quindi sempre aggiornato. Nella colonna dei regolatori il <span class="pos">verde</span> indica attivazione, il <span class="neg">rosso</span> repressione.</p>
+        <div class="table-scroll">
+          <table id="wt-table" class="wt-table">
+            <thead><tr><th>gene</th><th>ruolo</th><th>regolatori</th><th>cinetica</th><th>extra</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="verifica">
+        <h2>Esperimenti di verifica</h2>
+        <p>Il modello è stato verificato riproducendo esperimenti classici: ognuno corrisponde a un test automatico in <code>test/model.test.ts</code> (<code>npm test</code>) e si può lanciare dalla scheda <em>Esperimenti</em>.</p>
+        <table>
+          <thead><tr><th>perturbazione</th><th>fenotipo che emerge</th><th>in natura</th></tr></thead>
+          <tbody>
+            <tr><td><code>chd</code> −/−</td><td>embrione ventralizzato, non vitale</td><td>mutante <i>chordino</i></td></tr>
+            <tr><td><code>her1</code> −/−</td><td>nessun somite</td><td>somiti fusi o irregolari</td></tr>
+            <tr><td>orologio più veloce (ritardo ×0.65)</td><td>31 → 43 somiti</td><td>serpenti (Gomez et al. 2008)</td></tr>
+            <tr><td>soglia di <code>hoxc6</code> abbassata</td><td>pelviche e dorsale si spostano in avanti</td><td>trasformazione omeotica</td></tr>
+            <tr><td><code>tbx5a</code> −/−</td><td>niente pettorali, il resto normale</td><td>mutante <i>heartstrings</i></td></tr>
+            <tr><td>duplicazione di <code>tbx5a</code></td><td>gemma pettorale circa doppia</td><td>effetto dosaggio</td></tr>
+            <tr><td><code>otx2</code> −/−</td><td>niente occhi né mascelle, non vitale</td><td>perdita di prosencefalo e mesencefalo</td></tr>
+            <tr><td>gemma caudale più longeva</td><td>più vertebre</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="limiti">
+        <h2>Limiti</h2>
+        <ul>
+          <li>È un <strong>modello giocattolo</strong>. Le previsioni sono qualitative: dicono quali forme sono raggiungibili, quali mutazioni sono omeotiche o letali, dove lo sviluppo è canalizzato. Non sono previsioni quantitative su specie reali.</li>
+          <li>L'embrione è 2D, in vista laterale. Non ci sono l'asse sinistra-destra, la convergenza-estensione né i movimenti cellulari.</li>
+          <li>La forma adulta è una mappa di crescita, non un solido elastico, quindi non ci sono buckling o flessioni.</li>
+          <li>Le pinne pari sono ricavate dal baricentro e dalla quantità della gemma, non sono simulate come tessuto.</li>
+          <li>I nomi dei geni sono quelli degli ortologhi zebrafish di cui il gene imita il ruolo, ma la rete è molto più semplice di quella reale.</li>
+        </ul>
+      </section>
+
+      <section id="bibliografia">
+        <h2>Bibliografia</h2>
+        <ul class="refs">
+          <li>Reinitz J., Sharp D.H. (1995). Mechanism of <i>eve</i> stripe formation. <i>Mechanisms of Development</i> 49:133–158.</li>
+          <li>Jaeger J. et al. (2004). Dynamic control of positional information in the early <i>Drosophila</i> embryo. <i>Nature</i> 430:368–371.</li>
+          <li>Cooke J., Zeeman E.C. (1976). A clock and wavefront model for control of the number of repeated structures during animal morphogenesis. <i>J. Theor. Biol.</i> 58:455–476.</li>
+          <li>Lewis J. (2003). Autoinhibition with transcriptional delay: a mechanism for cell-autonomous oscillations in the zebrafish somitogenesis oscillator. <i>Current Biology</i> 13:1398–1408.</li>
+          <li>Dubrulle J., Pourquié O. (2004). <i>fgf8</i> mRNA decay establishes a gradient that couples axial elongation to patterning in the vertebrate embryo. <i>Nature</i> 427:419–422.</li>
+          <li>Gomez C. et al. (2008). Control of segment number in vertebrate embryos. <i>Nature</i> 454:335–339.</li>
+          <li>Hammerschmidt M. et al. (1996). <i>dino</i> and <i>mercedes</i>, two genes regulating dorsal development in the zebrafish embryo. <i>Development</i> 123:95–102.</li>
+          <li>Garrity D.M., Childs S., Fishman M.C. (2002). The <i>heartstrings</i> mutation in zebrafish causes heart/fin Tbx5 deficiency syndrome. <i>Development</i> 129:4635–4645.</li>
+          <li>Kondo S., Asai R. (1995). A reaction–diffusion wave on the skin of the marine angelfish <i>Pomacanthus</i>. <i>Nature</i> 376:765–768.</li>
+          <li>Nakamasu A. et al. (2009). Interactions between zebrafish pigment cells responsible for the generation of Turing patterns. <i>PNAS</i> 106:8429–8434.</li>
+        </ul>
+      </section>
+    </article>
+  </div>
+  <script type="module" src="/src/docs.ts"></script>
+</body>
+</html>

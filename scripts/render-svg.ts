@@ -1,0 +1,11 @@
+import { writeFileSync } from 'node:fs';
+import { WILDTYPE } from '../src/genome/presets/wildtype.ts';
+import { develop } from '../src/embryo/develop.ts';
+import { analyse } from '../src/stages/phenotype.ts';
+import { developSkin } from '../src/stages/skin.ts';
+import { drawFish } from '../src/render/body.ts';
+import { LIGHT, toSVG } from '../src/render/output.ts';
+const d = develop(WILDTYPE);
+const p = analyse(WILDTYPE, d);
+const pig = developSkin(WILDTYPE, d.fields, p, 1);
+for (const s of [0, 0.5, 1]) writeFileSync(`${process.argv[2]}/fish_${s}.svg`, toSVG(drawFish(p, s, { pigment: pig, showYolk: s === 0 ? 1 : 0 }), LIGHT, 1200, 1200));
